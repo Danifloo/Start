@@ -635,6 +635,41 @@ async function verifyClientSecret(req, env) {
   } });
 }
 
+
+async function getProductionAccess(env) {
+  if (env.TIKTOK_MODE !== "production") throw new Error("Sandbox does not permit publishing.");
+  const stored = await env.AUTH_STORE.get("owner:token");
+  if (!stored) throw new Error("Production TikTok login required.");
+  const user = await unseal(stored, env);
+  if (user.mode !== "production" || user.account_verified !== true ||
+      !(user.scopes || "").split(",").includes("video.publish")) {
+    throw new Error("Approved production video.publish authorization required.");
+  }
+  if (Date.now() >= user.expires_at) throw new Error("Authorization expired. Reconnect TikTok.");
+  return user.access_token;
+}
+
+async function creatorPostingOptions(req, env) {
+  if (!isOwner(req, env)) return requireOwner();
+  try {
+    const token = await getProductionAccess(env);
+    const info = await checkCreator(token);
+    const expected = (env.TIKTOK_ACCOUNT || "g0news1").replace(/^@/, "").toLowerCase();
+    if ((info.creator_username || "").replace(/^@/, "").toLowerCase() !== expected) {
+      return Response.json({ error: "TikTok account mismatch." }, { status: 403 });
+    }
+    return Response.json({
+      creator_username: info.creator_username,
+      privacy_level_options: info.privacy_level_options || [],
+      comment_disabled: !!info.comment_disabled,
+      duet_disabled: !!info.duet_disabled,
+      stitch_disabled: !!info.stitch_disabled,
+    }, { headers: { "Cache-Control": "no-store" } });
+  } catch (error) {
+    return Response.json({ error: error.message }, { status: 403 });
+  }
+}
+
 export default {
   async fetch(req, env) {
     try {
@@ -649,6 +684,7 @@ export default {
       if (url.pathname === "/callback" && req.method === "GET") return await callback(req, env);
       if (url.pathname === "/result" && req.method === "GET") return oauthResult(req);
       if (url.pathname === "/status" && req.method === "GET") return await status(req, env);
+      if (url.pathname === "/creator-options" && req.method === "GET") return await creatorPostingOptions(req, env);
       if (url.pathname === "/posting-readiness" && req.method === "GET") {
         if (!isOwner(req, env)) return requireOwner();
         const sandbox = env.TIKTOK_MODE === "sandbox";
