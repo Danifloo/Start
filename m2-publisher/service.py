@@ -209,7 +209,7 @@ function escapeHtml(s){return String(s).replace(/[&<>"']/g,c=>({'&':'&amp;','<':
 $('form').onsubmit=async e=>{
  e.preventDefault();const d=Object.fromEntries(new FormData(e.target));
  const date=new Date(d.scheduled_at);d.scheduled_at=date.toISOString();
- d.images=d.images.trim().split(/\\n+/).map(x=>x.trim()).filter(Boolean);
+ d.images=d.images.trim().split(/\n+/).map(x=>x.trim()).filter(Boolean);
  const r=await fetch('/api/posts',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify(d)});
  $('notice').textContent=r.ok?'Publicación programada.':'Error: '+JSON.stringify(await r.json());
  if(r.ok){e.target.reset();refresh()}
