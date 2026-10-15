@@ -417,6 +417,61 @@ async function diagnostics(req, env) {
 }
 
 /**
+ * Owner-only outbound network probe. Sends no TikTok credentials, no tokens,
+ * no OAuth codes, and does not save any results. A 4xx from TikTok is still
+ * evidence that the network request reached their API.
+ */
+async function networkTest(req, env) {
+  const adminError = checkAdminSettings(env);
+  if (adminError) return adminError;
+  if (!isOwner(req, env)) return requireOwner();
+
+  const checks = [
+    { name: "general_https", url: "https://example.com/", method: "GET" },
+    { name: "tiktok_token_get", url: TOKEN_URL, method: "GET" },
+    {
+      name: "tiktok_token_post_dummy",
+      url: TOKEN_URL,
+      method: "POST",
+      body: new URLSearchParams({
+        client_key: "invalid-network-probe",
+        client_secret: "invalid-network-probe",
+        grant_type: "invalid-network-probe",
+      }),
+    },
+  ];
+  const responses = await Promise.all(checks.map(async check => {
+    try {
+      const response = await fetch(check.url, {
+        method: check.method,
+        ...(check.body ? { body: check.body } : {}),
+        headers: check.body ? { "Content-Type": "application/x-www-form-urlencoded" } : {},
+        redirect: "manual",
+        signal: AbortSignal.timeout(8000),
+      });
+      // A 400/401/403/404/405 here proves connectivity; do not read body.
+      try { await response.body?.cancel(); } catch {}
+      return { check: check.name, connection: "reached_http_server",
+        http_status: response.status,
+        redirect_received: response.status >= 300 && response.status < 400 };
+    } catch (error) {
+      // Classify without returning arbitrary exception text that could
+      // inadvertently contain private request metadata.
+      const name = error instanceof Error ? error.name : "UnknownError";
+      const knownNames = ["TypeError", "AbortError", "TimeoutError", "NetworkError"];
+      return { check: check.name, connection: "fetch_failed",
+        error_type: knownNames.includes(name) ? name : "OtherError" };
+    }
+  }));
+  return Response.json({
+    service: "GoNews outbound network test",
+    sends_real_credentials: false,
+    results: responses,
+  }, { headers: { "Cache-Control": "no-store",
+                 "Referrer-Policy": "no-referrer" } });
+}
+
+/**
  * Owner-only comparison of the public TikTok client key with the value
  * deployed in Cloudflare. Never display, store, or log either value.
  */
@@ -487,6 +542,7 @@ export default {
       if (url.pathname === "/result" && req.method === "GET") return oauthResult(req);
       if (url.pathname === "/status" && req.method === "GET") return await status(req, env);
       if (url.pathname === "/diagnostics" && req.method === "GET") return await diagnostics(req, env);
+      if (url.pathname === "/network-test" && req.method === "GET") return await networkTest(req, env);
       if (url.pathname === "/verify-client-key" && ["GET", "POST"].includes(req.method)) return await verifyClientKey(req, env);
       return textResponse("Not found", 404);
     } catch (err) {
