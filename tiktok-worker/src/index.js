@@ -706,6 +706,60 @@ async function postingStatus(req, env) {
   }
 }
 
+
+async function submitVideo(req, env) {
+  if (!isOwner(req, env)) return requireOwner();
+  if (env.TIKTOK_MODE !== "production") {
+    return Response.json({ error: "Sandbox cannot publish videos. Production approval is required." }, { status: 403 });
+  }
+  const length = Number(req.headers.get("Content-Length") || 0);
+  if (!length || length > 31 * 1024 * 1024) return Response.json({ error: "Request exceeds 31 MB." }, { status: 413 });
+  if (!(req.headers.get("Content-Type") || "").startsWith("multipart/form-data;")) {
+    return Response.json({ error: "Expected a video upload form." }, { status: 415 });
+  }
+  try {
+    const token = await getProductionAccess(env);
+    const creator = await checkCreator(token);
+    const expected = (env.TIKTOK_ACCOUNT || "g0news1").replace(/^@/, "").toLowerCase();
+    if ((creator.creator_username || "").replace(/^@/, "").toLowerCase() !== expected) {
+      return Response.json({ error: "Connected TikTok account does not match." }, { status: 403 });
+    }
+    const form = await req.formData();
+    const video = form.get("video"), title = form.get("title"), privacy = form.get("privacy_level");
+    if (!(video instanceof File) || video.type !== "video/mp4" || video.size < 1 || video.size > 30 * 1024 * 1024) {
+      return Response.json({ error: "Select an MP4 up to 30 MB." }, { status: 400 });
+    }
+    if (typeof title !== "string" || !title.trim() || title.length > 2200 ||
+        !(creator.privacy_level_options || []).includes(privacy) || form.get("consent") !== "yes") {
+      return Response.json({ error: "Caption, privacy choice, and posting consent are required." }, { status: 400 });
+    }
+    const flag = name => form.get(name) === "true";
+    const init = await sendTikTokJson("https://open.tiktokapis.com/v2/post/publish/video/init/", token, {
+      post_info: {
+        title, privacy_level: privacy,
+        disable_comment: flag("disable_comment") || !!creator.comment_disabled,
+        disable_duet: flag("disable_duet") || !!creator.duet_disabled,
+        disable_stitch: flag("disable_stitch") || !!creator.stitch_disabled,
+        video_cover_timestamp_ms: 1000,
+      },
+      source_info: { source: "FILE_UPLOAD", video_size: video.size, chunk_size: video.size, total_chunk_count: 1 },
+    });
+    const uploadUrl = new URL(init.upload_url);
+    if (uploadUrl.protocol !== "https:" || !uploadUrl.hostname.endsWith(".tiktokapis.com")) {
+      throw new Error("TikTok returned an unexpected upload destination.");
+    }
+    const uploaded = await fetch(uploadUrl.toString(), {
+      method: "PUT", redirect: "error",
+      headers: { "Content-Type": "video/mp4", "Content-Range": "bytes 0-" + (video.size - 1) + "/" + video.size },
+      body: await video.arrayBuffer(),
+    });
+    if (![200, 201].includes(uploaded.status)) throw new Error("TikTok upload was not accepted.");
+    return Response.json({ publish_id: init.publish_id, status: "SUBMITTED_NOT_CONFIRMED" });
+  } catch (error) {
+    return Response.json({ error: error.message }, { status: 502 });
+  }
+}
+
 export default {
   async fetch(req, env) {
     try {
@@ -720,6 +774,7 @@ export default {
       if (url.pathname === "/callback" && req.method === "GET") return await callback(req, env);
       if (url.pathname === "/result" && req.method === "GET") return oauthResult(req);
       if (url.pathname === "/status" && req.method === "GET") return await status(req, env);
+      if (url.pathname === "/submit-video" && req.method === "POST") return await submitVideo(req, env);
       if (url.pathname === "/posting-status" && req.method === "GET") return await postingStatus(req, env);
       if (url.pathname === "/creator-options" && req.method === "GET") return await creatorPostingOptions(req, env);
       if (url.pathname === "/posting-readiness" && req.method === "GET") {
