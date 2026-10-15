@@ -1,0 +1,30 @@
+<!doctype html>
+<html lang="es">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<meta http-equiv="Content-Security-Policy" content="default-src 'none'; script-src 'self'; style-src 'self'; connect-src 'none'; img-src 'none'; object-src 'none'; base-uri 'none'; form-action 'none'">
+<title>Generador de clave privada | GoNews Publisher</title>
+<link rel="stylesheet" href="style.css">
+<script src="keygen.js" defer></script>
+</head>
+<body>
+<header><span class="name">GONEWS <span style="color:#ffd500">PUBLISHER</span></span><nav><a href="index.html">Inicio</a><a href="privacy.html">Privacidad</a></nav></header>
+<main>
+<div class="eyebrow">Configuración segura · Solo en tu dispositivo</div>
+<h1>Generar clave de cifrado</h1>
+<p>Esta herramienta genera los 32 bytes aleatorios requeridos para <code>TOKEN_ENCRYPTION_KEY</code> mediante la función criptográfica segura de tu navegador. La clave se genera en tu dispositivo y no se envía a ningún servidor.</p>
+<div class="panel" style="overflow-wrap:anywhere">
+<h2 style="margin-top:0">1. Genera tu clave</h2>
+<button id="generate" type="button" style="background:#ffd500;color:#111;border:0;padding:12px 18px;border-radius:8px;font-size:17px;font-weight:bold;cursor:pointer">Generar clave segura</button>
+<p id="status" role="status" aria-live="polite">Pulsa el botón para generar la clave.</p>
+<label for="key" style="display:block;font-weight:bold;margin:14px 0 5px">Clave privada (Base64)</label>
+<textarea id="key" rows="3" readonly style="width:100%;background:#090b0f;color:white;border:1px solid #515763;border-radius:8px;padding:12px;font-size:15px" placeholder="La clave aparecerá aquí"></textarea>
+<button id="copy" type="button" style="background:#2d3542;color:white;border:1px solid #727b8c;padding:10px 18px;border-radius:8px;margin-top:12px;cursor:pointer">Copiar clave</button>
+</div>
+<h2>2. Guárdala en Cloudflare</h2>
+<p>En Cloudflare abre <strong>gonews-tiktok-auth → Settings → Runtime variables and secrets → Add variable</strong>. Usa la clave de variable <code>TOKEN_ENCRYPTION_KEY</code>, el tipo <strong>Secret</strong> y pega el valor que acabas de generar. Pulsa <strong>Add 1 variable and deploy</strong>.</p>
+<p><strong>Importante:</strong> no publiques esta clave en GitHub, no la pegues en el chat y no la fotografíes. Guárdala en tu gestor de contraseñas. Si la pierdes o la cambias, las autorizaciones cifradas anteriormente dejarán de poder leerse y habrá que volver a conectar TikTok.</p>
+</main>
+<footer>Generación local con Web Crypto API · GoNews Publisher</footer>
+</body></html>
