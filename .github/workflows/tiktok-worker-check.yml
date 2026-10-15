@@ -1,0 +1,30 @@
+name: GoNews Worker checks
+
+on:
+  push:
+    paths:
+      - "tiktok-worker/**"
+      - ".github/workflows/tiktok-worker-check.yml"
+  pull_request:
+    paths:
+      - "tiktok-worker/**"
+      - ".github/workflows/tiktok-worker-check.yml"
+
+permissions:
+  contents: read
+
+jobs:
+  check:
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: "22"
+      - name: Check Worker syntax
+        working-directory: tiktok-worker
+        run: npm run check
+      - name: Verify safety with no real API calls
+        working-directory: tiktok-worker
+        run: npm test

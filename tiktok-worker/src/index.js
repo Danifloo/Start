@@ -1,8 +1,11 @@
 /**
  * GoNews Publisher - TikTok OAuth connection backend (Cloudflare Worker).
- * Informational prototype: connects account securely but does not post videos.
+ * Owner-only development integration. Publishing is disabled by configuration.
  * Sensitive values are stored in Worker secrets, never GitHub.
  */
+
+import { publishingEnabled, validatePostSettings, mp4Duration } from "./posting-policy.js";
+import { publishingPanel } from "./publishing-panel.js";
 
 const AUTH_URL = "https://www.tiktok.com/v2/auth/authorize/";
 const TOKEN_URL = "https://open.tiktokapis.com/v2/oauth/token/";
@@ -434,6 +437,8 @@ async function diagnostics(req, env) {
     auth_store: kvStatus,
     mode: env.TIKTOK_MODE === "sandbox" ? "sandbox" : "production",
     requested_scopes: env.TIKTOK_MODE === "sandbox" ? "user.info.basic" : "user.info.basic,video.publish",
+    publishing_enabled: publishingEnabled(env),
+    production_approval: "not_verified_by_this_endpoint",
     ready: missing.length === 0 && redirectStatus === "ok" &&
       encryptionStatus === "ok" && kvStatus === "ok",
   }, { headers: { "Cache-Control": "no-store" } });
@@ -660,6 +665,10 @@ async function creatorPostingOptions(req, env) {
     }
     return Response.json({
       creator_username: info.creator_username,
+      creator_nickname: info.creator_nickname || info.creator_username,
+      creator_avatar_url: info.creator_avatar_url || null,
+      max_video_post_duration_sec: info.max_video_post_duration_sec,
+      publishing_enabled: publishingEnabled(env),
       privacy_level_options: info.privacy_level_options || [],
       comment_disabled: !!info.comment_disabled,
       duet_disabled: !!info.duet_disabled,
@@ -709,8 +718,11 @@ async function postingStatus(req, env) {
 
 async function submitVideo(req, env) {
   if (!isOwner(req, env)) return requireOwner();
-  if (env.TIKTOK_MODE !== "production") {
-    return Response.json({ error: "Sandbox cannot publish videos. Production approval is required." }, { status: 403 });
+  if (!publishingEnabled(env)) {
+    return Response.json({ error: "La publicación está desactivada. Sandbox y una conexión OAuth no acreditan aprobación de Production." }, { status: 403, headers: { "Cache-Control": "no-store" } });
+  }
+  if (req.headers.get("Origin") !== new URL(req.url).origin) {
+    return Response.json({ error: "La publicación debe confirmarse desde el panel de GoNews." }, { status: 403 });
   }
   const length = Number(req.headers.get("Content-Length") || 0);
   if (!length || length > 31 * 1024 * 1024) return Response.json({ error: "Request exceeds 31 MB." }, { status: 413 });
@@ -725,21 +737,25 @@ async function submitVideo(req, env) {
       return Response.json({ error: "Connected TikTok account does not match." }, { status: 403 });
     }
     const form = await req.formData();
-    const video = form.get("video"), title = form.get("title"), privacy = form.get("privacy_level");
+    const video = form.get("video");
     if (!(video instanceof File) || video.type !== "video/mp4" || video.size < 1 || video.size > 30 * 1024 * 1024) {
       return Response.json({ error: "Select an MP4 up to 30 MB." }, { status: 400 });
     }
-    if (typeof title !== "string" || !title.trim() || title.length > 2200 ||
-        !(creator.privacy_level_options || []).includes(privacy) || form.get("consent") !== "yes") {
-      return Response.json({ error: "Caption, privacy choice, and posting consent are required." }, { status: 400 });
+    let settings, videoBytes;
+    try {
+      settings = validatePostSettings(form, creator);
+      videoBytes = await video.arrayBuffer();
+      const duration = mp4Duration(videoBytes);
+      const maximum = Number(creator.max_video_post_duration_sec);
+      if (!Number.isFinite(maximum) || maximum <= 0 || duration > maximum) {
+        throw new Error("El video supera la duración permitida actualmente por TikTok, o el límite no está disponible.");
+      }
+    } catch (error) {
+      return Response.json({ error: error.message }, { status: 400 });
     }
-    const flag = name => form.get(name) === "true";
     const init = await sendTikTokJson("https://open.tiktokapis.com/v2/post/publish/video/init/", token, {
       post_info: {
-        title, privacy_level: privacy,
-        disable_comment: flag("disable_comment") || !!creator.comment_disabled,
-        disable_duet: flag("disable_duet") || !!creator.duet_disabled,
-        disable_stitch: flag("disable_stitch") || !!creator.stitch_disabled,
+        ...settings,
         video_cover_timestamp_ms: 1000,
       },
       source_info: { source: "FILE_UPLOAD", video_size: video.size, chunk_size: video.size, total_chunk_count: 1 },
@@ -751,7 +767,7 @@ async function submitVideo(req, env) {
     const uploaded = await fetch(uploadUrl.toString(), {
       method: "PUT", redirect: "error",
       headers: { "Content-Type": "video/mp4", "Content-Range": "bytes 0-" + (video.size - 1) + "/" + video.size },
-      body: await video.arrayBuffer(),
+      body: videoBytes,
     });
     if (![200, 201].includes(uploaded.status)) throw new Error("TikTok upload was not accepted.");
     return Response.json({ publish_id: init.publish_id, status: "SUBMITTED_NOT_CONFIRMED" });
@@ -761,16 +777,6 @@ async function submitVideo(req, env) {
 }
 
 
-function publishingPanel() {
-  const html = `<!doctype html><html lang="es"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>GoNews · Publicar video</title><style>body{font:16px system-ui;background:#111820;color:#fff;margin:0}main{max-width:600px;margin:25px auto;padding:20px}input,textarea,select{box-sizing:border-box;width:100%;padding:12px;border-radius:8px;font:inherit}label{display:block;margin-top:15px}label input[type=checkbox]{width:auto}button{background:#ffd500;border:0;border-radius:8px;padding:13px;font-weight:bold;margin-top:18px}video{width:100%;max-height:420px}#message{white-space:pre-wrap;line-height:1.5}</style></head><body><main><h1>GoNews · Publicar</h1><p>Solo disponible con autorización de producción de TikTok. El video se envía únicamente cuando confirmas.</p><button id="load">Comprobar permisos</button><p id="message" role="status"></p><form id="form" hidden><label>Video MP4, hasta 30 MB<input id="video" type="file" accept="video/mp4" required></label><video id="preview" controls playsinline hidden></video><label>Descripción<textarea id="title" maxlength="2200" required></textarea></label><label>Privacidad<select id="privacy" required></select></label><label><input id="comment" type="checkbox"> Desactivar comentarios</label><label><input id="duet" type="checkbox"> Desactivar duetos</label><label><input id="stitch" type="checkbox"> Desactivar stitches</label><label><input id="consent" type="checkbox" required> Confirmo que tengo los derechos del video y autorizo publicarlo.</label><button id="send">Enviar a TikTok</button></form><button id="check" hidden>Consultar estado</button></main><script>
-const msg=document.getElementById("message"),form=document.getElementById("form");let creator="",pid="",previewUrl="";
-document.getElementById("load").onclick=async()=>{msg.textContent="Consultando permisos...";try{const r=await fetch("/creator-options");const j=await r.json();if(!r.ok)throw Error(j.error);creator=j.creator_username;const p=document.getElementById("privacy");p.replaceChildren();for(const name of j.privacy_level_options){const o=document.createElement("option");o.value=name;o.textContent=name;p.append(o);}for(const [id,key] of [["comment","comment_disabled"],["duet","duet_disabled"],["stitch","stitch_disabled"]])document.getElementById(id).disabled=!!j[key];form.hidden=false;msg.textContent="Cuenta verificada: @"+creator;}catch(e){msg.textContent=e.message;form.hidden=true;}};
-document.getElementById("video").onchange=e=>{const v=document.getElementById("preview"),file=e.target.files[0];if(previewUrl)URL.revokeObjectURL(previewUrl);v.hidden=!file;if(file){previewUrl=URL.createObjectURL(file);v.src=previewUrl;}};
-form.onsubmit=async e=>{e.preventDefault();const file=document.getElementById("video").files[0];if(!file||file.size>30*1024*1024){msg.textContent="MP4 máximo 30 MB.";return;}if(!confirm("¿Publicar en @"+creator+"?"))return;const btn=document.getElementById("send");btn.disabled=true;msg.textContent="Enviando a TikTok...";try{const data=new FormData();data.set("video",file);data.set("title",document.getElementById("title").value);data.set("privacy_level",document.getElementById("privacy").value);data.set("consent","yes");for(const [key,id] of [["disable_comment","comment"],["disable_duet","duet"],["disable_stitch","stitch"]])data.set(key,String(document.getElementById(id).checked));const r=await fetch("/submit-video",{method:"POST",body:data});const j=await r.json();if(!r.ok)throw Error(j.error);pid=j.publish_id;msg.textContent="TikTok recibió el video. La publicación todavía no está confirmada.";document.getElementById("check").hidden=false;}catch(e){msg.textContent=e.message;}finally{btn.disabled=false;}};
-document.getElementById("check").onclick=async()=>{try{const r=await fetch("/posting-status?id="+encodeURIComponent(pid));const j=await r.json();if(!r.ok)throw Error(j.error);msg.textContent="Estado: "+j.status+(j.fail_reason?" — "+j.fail_reason:"");}catch(e){msg.textContent=e.message;}};
-</script></body></html>`;
-  return new Response(html,{headers:{"Content-Type":"text/html; charset=utf-8","Cache-Control":"no-store","X-Frame-Options":"DENY","Content-Security-Policy":"default-src 'self' blob:; script-src 'unsafe-inline'; style-src 'unsafe-inline'; media-src blob:; form-action 'self'; frame-ancestors 'none'"}});
-}
 
 export default {
   async fetch(req, env) {
@@ -793,7 +799,15 @@ export default {
       if (url.pathname === "/posting-readiness" && req.method === "GET") {
         if (!isOwner(req, env)) return requireOwner();
         const sandbox = env.TIKTOK_MODE === "sandbox";
-        return Response.json({ mode: sandbox ? "sandbox" : "production", publishing_enabled: false, reason: sandbox ? "TikTok Sandbox supports login testing, not public posting." : "Production posting is not implemented yet.", next_step: "Implement and test Content Posting API before requesting review." }, { headers: { "Cache-Control": "no-store" } });
+        return Response.json({
+          mode: sandbox ? "sandbox" : "production",
+          publishing_enabled: publishingEnabled(env),
+          production_approval: "not_verified_by_this_endpoint",
+          reason: sandbox ? "TikTok Sandbox supports login testing, not public posting."
+            : publishingEnabled(env) ? "Publishing is enabled locally; this does not prove TikTok approval."
+            : "Publishing is disabled by configuration.",
+          next_step: "Resolve intended-use eligibility and verify TikTok Production approval before enabling publishing.",
+        }, { headers: { "Cache-Control": "no-store" } });
       }
       if (url.pathname === "/diagnostics" && req.method === "GET") return await diagnostics(req, env);
       if (url.pathname === "/network-test" && req.method === "GET") return await networkTest(req, env);
@@ -813,3 +827,4 @@ export default {
     }
   },
 };
+

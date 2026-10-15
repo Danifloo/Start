@@ -9,6 +9,8 @@ TIKTOK_REDIRECT_URI = "https://gonews-tiktok-auth.daniloflores835.workers.dev/ca
 TIKTOK_ACCOUNT = "g0news1"
 # Testing only; Sandbox permits Login Kit but not public Content Posting API.
 TIKTOK_MODE = "sandbox"
+# Keep publishing disabled until the owner confirms a separate activation.
+PUBLISHING_ENABLED = "false"
 
 # Keep the existing GONEWS_AUTH namespace connected across Git deployments.
 [[kv_namespaces]]
@@ -17,3 +19,4 @@ id = "c905d4b16d26451aa7eb6200ff5a782a"
 
 # Configure TikTok client credentials, admin password and encryption key
 # as *encrypted Cloudflare Worker secrets*, never in this file or GitHub.
+
