@@ -1,0 +1,16 @@
+name = "m2-publisher-free"
+main = "src/worker.mjs"
+compatibility_date = "2026-10-15"
+workers_dev = true
+
+[vars]
+IG_EXPECTED_USERNAME = "maqued2"
+
+[triggers]
+crons = ["*/15 * * * *"]
+
+[[d1_databases]]
+binding = "DB"
+database_name = "m2-publisher-db"
+# Replace after `npx wrangler d1 create m2-publisher-db` (DO NOT deploy placeholder)
+database_id = "REPLACE_WITH_YOUR_DATABASE_UUID"
