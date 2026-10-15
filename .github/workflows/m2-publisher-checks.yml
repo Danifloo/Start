@@ -1,0 +1,30 @@
+name: M2 Publisher checks
+on:
+  push:
+    branches: [feature/m2-publisher]
+    paths:
+      - 'm2-publisher/**'
+      - '.github/workflows/m2-publisher-checks.yml'
+  pull_request:
+    paths:
+      - 'm2-publisher/**'
+      - '.github/workflows/m2-publisher-checks.yml'
+permissions:
+  contents: read
+jobs:
+  test:
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: m2-publisher
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+      - name: Install app and test dependencies
+        run: pip install -r requirements.txt pytest
+      - name: Compile source
+        run: python -m py_compile service.py
+      - name: Run tests
+        run: pytest -q
