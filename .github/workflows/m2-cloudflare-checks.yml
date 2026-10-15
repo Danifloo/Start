@@ -1,0 +1,28 @@
+name: M2 Publisher Cloudflare checks
+on:
+  push:
+    branches: [feature/m2-publisher]
+    paths:
+      - 'm2-cloudflare/**'
+      - '.github/workflows/m2-cloudflare-checks.yml'
+  pull_request:
+    paths:
+      - 'm2-cloudflare/**'
+      - '.github/workflows/m2-cloudflare-checks.yml'
+permissions:
+  contents: read
+jobs:
+  test:
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: m2-cloudflare
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+      - name: Check JavaScript syntax
+        run: node --check src/index.js && node --check src/ui.js
+      - name: Run security and scheduling tests
+        run: node --test tests/*.test.mjs
