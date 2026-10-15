@@ -3,9 +3,15 @@ main = "src/index.js"
 compatibility_date = "2026-10-14"
 workers_dev = true
 
-# Bind to the existing Cloudflare Workers KV namespace GONEWS_AUTH.
-# This namespace ID is not a secret; sensitive TikTok keys, tokens and
-# encryption passwords must be configured as Cloudflare Worker secrets.
+# Public (nonsecret) settings needed by the TikTok OAuth callback.
+[vars]
+TIKTOK_REDIRECT_URI = "https://gonews-tiktok-auth.daniloflores835.workers.dev/callback"
+TIKTOK_ACCOUNT = "g0news1"
+
+# Keep the existing GONEWS_AUTH namespace connected across Git deployments.
 [[kv_namespaces]]
 binding = "AUTH_STORE"
 id = "c905d4b16d26451aa7eb6200ff5a782a"
+
+# Configure TikTok client credentials, admin password and encryption key
+# as *encrypted Cloudflare Worker secrets*, never in this file or GitHub.
