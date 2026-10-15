@@ -1,0 +1,17 @@
+{
+  "name": "m2-publisher-cloudflare",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "test": "node --test test/*.test.js",
+    "check": "node --check src/worker.js && node --check src/instagram.js && node --check src/auth.js && node --check src/ui.js",
+    "dev": "wrangler dev",
+    "deploy": "wrangler deploy",
+    "db:create": "wrangler d1 create m2-publisher-db",
+    "db:migrate:local": "wrangler d1 migrations apply m2-publisher-db --local",
+    "db:migrate:remote": "wrangler d1 migrations apply m2-publisher-db --remote"
+  },
+  "devDependencies": { "wrangler": "^4.0.0" },
+  "engines": { "node": ">=20" }
+}

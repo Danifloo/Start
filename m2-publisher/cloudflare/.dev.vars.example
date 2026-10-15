@@ -1,0 +1,6 @@
+# LOCAL-ONLY EXAMPLE. Use `wrangler secret put` for production. NEVER commit `.dev.vars`.
+ADMIN_PASSWORD=REPLACE_WITH_A_LONG_UNIQUE_PASSWORD_AT_LEAST_16_CHARS
+SESSION_SECRET=REPLACE_WITH_A_LONG_RANDOM_SECRET_32_CHARS_MINIMUM
+IG_USER_ID=
+IG_ACCESS_TOKEN=
+# Keep ENABLE_PUBLISHING=false until live account, quota and first test are confirmed.

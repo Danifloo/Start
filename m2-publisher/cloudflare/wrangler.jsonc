@@ -1,0 +1,21 @@
+{
+  "$schema": "./node_modules/wrangler/config-schema.json",
+  "name": "m2-publisher-free",
+  "main": "src/worker.js",
+  "compatibility_date": "2026-10-15",
+  "workers_dev": true,
+  "triggers": { "crons": ["*/15 * * * *"] },
+  "vars": {
+    "IG_EXPECTED_USERNAME": "maqued2",
+    "META_GRAPH_VERSION": "v25.0",
+    "ENABLE_PUBLISHING": "false"
+  },
+  "d1_databases": [
+    {
+      "binding": "DB",
+      "database_name": "m2-publisher-db",
+      "database_id": "REPLACE_WITH_CLOUDFLARE_D1_DATABASE_ID",
+      "migrations_dir": "migrations"
+    }
+  ]
+}
