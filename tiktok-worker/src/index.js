@@ -585,7 +585,7 @@ async function verifyClientSecret(req, env) {
     // Reject large payloads, files and non-form requests. No remote TikTok
     // calls are made by this endpoint.
     const size = req.headers.get("Content-Length");
-    if (size && (!/^\\d+$/.test(size) || Number(size) > 2048)) {
+    if (size && (!/^\d+$/.test(size) || Number(size) > 2048)) {
       return textResponse("Form is too large.", 413);
     }
     if (!(req.headers.get("Content-Type") || "").toLowerCase()
