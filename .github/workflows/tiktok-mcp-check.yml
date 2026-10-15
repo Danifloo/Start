@@ -1,0 +1,33 @@
+name: GoNews TikTok plugin checks
+
+on:
+  push:
+    paths:
+      - "tiktok-mcp/**"
+      - ".github/workflows/tiktok-mcp-check.yml"
+  pull_request:
+    paths:
+      - "tiktok-mcp/**"
+      - ".github/workflows/tiktok-mcp-check.yml"
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  validate:
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+      - name: Configure Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+      - name: Install dependencies
+        run: python -m pip install -r tiktok-mcp/requirements.txt
+      - name: Validate Python syntax
+        run: python -m compileall -q tiktok-mcp
+      - name: Run safety checks
+        run: python -m unittest discover -s tiktok-mcp/tests -p "test_*.py" -v
