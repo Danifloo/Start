@@ -1,1 +1,33 @@
-<!doctype html><html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>Privacy Policy | GoNews Publisher</title><link rel="stylesheet" href="style.css"></head><body><header><span class="name">GONEWS PUBLISHER</span><nav><a href="index.html">Home</a><a href="privacy.html">Privacy</a><a href="terms.html">Terms</a></nav></header><main><h1>Privacy Policy</h1><p>Last updated: October 15, 2026.</p><h2>Project status</h2><p>GoNews Publisher is an experimental, not-yet-deployed code prototype and informational static site. The website currently provides no account login, video uploading, or posting service.</p><h2>Data on this website</h2><p>We do not intentionally collect TikTok passwords, OAuth tokens, video files or account information through this website. The website host, GitHub Pages if enabled, may automatically process technical request data such as IP addresses according to its own policies.</p><h2>Future TikTok functionality</h2><p>A future version may allow the authorized account owner to connect TikTok through OAuth. It would need to process account identifiers, OAuth access and refresh tokens, selected MP4 files, captions, and publication statuses solely to provide owner-approved publishing. These functions are not active on this site. Before a live service launches, this policy will be updated with accurate data storage, retention, deletion and contact details.</p><h2>Third parties</h2><p>The project source is hosted on GitHub. A future posting service would use TikTok's official API. Never submit passwords, API secrets or authentication tokens on this site or in public GitHub issues.</p><h2>Questions</h2><p>Project information is available at <a href="https://github.com/Danifloo/Start">the repository</a>. No public contact form is offered. This notice describes the current prototype, not a launched service.</p></main><footer>Independent prototype, not affiliated with TikTok.</footer></body></html>
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>Privacy Policy | GoNews Publisher</title>
+<meta name="description" content="How GoNews Publisher handles TikTok OAuth credentials during private development testing.">
+<link rel="stylesheet" href="style.css">
+</head>
+<body>
+<header><span class="name">GONEWS PUBLISHER</span><nav><a href="index.html">Home</a><a href="privacy.html">Privacy</a><a href="terms.html">Terms</a></nav></header>
+<main>
+<div class="eyebrow">Private development integration</div>
+<h1>Privacy Policy</h1>
+<p>Updated: October 15, 2026.</p>
+<h2>Current service status</h2>
+<p>GoNews Publisher is an experimental project, currently intended for the owner of TikTok account @g0news1 rather than general public use. The public GitHub Pages website is informational: it does not itself collect TikTok passwords, accept MP4 uploads or publish videos. A separate Cloudflare Worker at <code>gonews-tiktok-auth.daniloflores835.workers.dev</code> hosts the development OAuth connection service. The Worker may process authorization data when the owner explicitly connects TikTok; no live video publishing service has launched.</p>
+<h2>Data handled during account authorization</h2>
+<p>If you use the TikTok connection flow, TikTok supplies an authorization code, an account identifier, access and refresh tokens, granted permissions, and token expiry metadata. The service requests <code>user.info.basic</code> to help identify the connected account and <code>video.publish</code> to prepare an authorized posting integration. The account username may be queried from TikTok to check that the correct account has been connected. TikTok passwords are not requested by our service.</p>
+<h2>Storage and protection</h2>
+<p>The Worker uses Cloudflare Workers KV to store the account authorization and token metadata encrypted with AES-GCM using a key configured separately in Cloudflare Secrets. A temporary one-time OAuth state is kept in KV for no longer than approximately ten minutes and is deleted when used. The encrypted tokens remain in KV until manually removed or replaced with new authorization. The app owner controls the Worker and its configuration. We do not add these tokens or private keys to the public GitHub repository or to the static website.</p>
+<h2>How the data is used and shared</h2>
+<p>The authorization data is used only to connect the authorized TikTok account and support authorized publishing development. The app communicates with TikTok's official API and uses Cloudflare to run the server and store encrypted authorization data. The static website is hosted on GitHub Pages. Those providers may independently process normal service and network data, including IP addresses, according to their own privacy terms. We do not sell authorization data or use it for advertising.</p>
+<h2>Disconnecting and deleting data</h2>
+<p>During the development phase, the account owner can revoke this app's access in TikTok's connected-app settings, and the Worker administrator can delete <code>owner:token</code> from the private Cloudflare KV namespace named <code>GONEWS_AUTH</code>. Revoking TikTok access does not automatically delete the local encrypted record; both actions should be used for complete disconnection. If a live public service is launched, we will provide appropriate account and data removal controls before accepting outside users.</p>
+<h2>Logs, policies and updates</h2>
+<p>Cloudflare may keep service request logs according to the configuration and provider policies. Do not include TikTok passwords, authorization codes, client secrets or access tokens in support messages or GitHub issues. Any future MP4 upload and publication capability will need a policy update describing its storage, retention, removal and usage rules before launch. This privacy notice may be updated as the project evolves.</p>
+<h2>Project contact</h2>
+<p>This project is managed by the repository owner, Danifloo. For general public project information, see <a href="https://github.com/Danifloo/Start">the GitHub repository</a>. It currently offers no dedicated private support channel. This service is not affiliated with TikTok.</p>
+</main>
+<footer>GoNews Publisher — independent development integration, not affiliated with TikTok.</footer>
+</body>
+</html>
