@@ -7,6 +7,8 @@ workers_dev = true
 [vars]
 TIKTOK_REDIRECT_URI = "https://gonews-tiktok-auth.daniloflores835.workers.dev/callback"
 TIKTOK_ACCOUNT = "g0news1"
+# Testing only; Sandbox permits Login Kit but not public Content Posting API.
+TIKTOK_MODE = "sandbox"
 
 # Keep the existing GONEWS_AUTH namespace connected across Git deployments.
 [[kv_namespaces]]
