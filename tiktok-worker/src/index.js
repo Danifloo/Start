@@ -232,6 +232,64 @@ async function status(req, env) {
   }, { headers: { "Cache-Control": "no-store" } });
 }
 
+/**
+ * Private, read-only health check for the administrator.
+ * Never returns passwords, tokens, keys or their lengths.
+ */
+async function diagnostics(req, env) {
+  const adminError = checkAdminSettings(env);
+  if (adminError) return adminError;
+  if (!isOwner(req, env)) return requireOwner();
+
+  const required = [
+    "TIKTOK_CLIENT_KEY", "TIKTOK_CLIENT_SECRET",
+    "TIKTOK_REDIRECT_URI", "ADMIN_USERNAME",
+    "ADMIN_PASSWORD", "TOKEN_ENCRYPTION_KEY",
+  ];
+  const missing = required.filter(name => !env[name]);
+
+  let redirectStatus = "missing";
+  if (env.TIKTOK_REDIRECT_URI) {
+    try {
+      const u = new URL(env.TIKTOK_REDIRECT_URI);
+      redirectStatus = u.protocol === "https:" && u.pathname === "/callback" &&
+        u.origin === new URL(req.url).origin && !u.search && !u.hash
+        ? "ok" : "incorrect";
+    } catch {
+      redirectStatus = "incorrect";
+    }
+  }
+
+  let encryptionStatus = "missing";
+  if (env.TOKEN_ENCRYPTION_KEY) {
+    try {
+      await keyFromEnv(env);
+      encryptionStatus = "ok";
+    } catch {
+      encryptionStatus = "invalid_format";
+    }
+  }
+
+  let kvStatus = "missing";
+  if (env.AUTH_STORE && typeof env.AUTH_STORE.get === "function") {
+    try {
+      await env.AUTH_STORE.get("gonews:diagnostic:absent-key");
+      kvStatus = "ok";
+    } catch {
+      kvStatus = "unavailable";
+    }
+  }
+
+  return Response.json({
+    missing_variable_names: missing,
+    redirect_uri: redirectStatus,
+    token_encryption_key: encryptionStatus,
+    auth_store: kvStatus,
+    ready: missing.length === 0 && redirectStatus === "ok" &&
+      encryptionStatus === "ok" && kvStatus === "ok",
+  }, { headers: { "Cache-Control": "no-store" } });
+}
+
 export default {
   async fetch(req, env) {
     try {
@@ -245,6 +303,7 @@ export default {
       if (url.pathname === "/connect" && req.method === "GET") return await connect(req, env);
       if (url.pathname === "/callback" && req.method === "GET") return await callback(req, env);
       if (url.pathname === "/status" && req.method === "GET") return await status(req, env);
+      if (url.pathname === "/diagnostics" && req.method === "GET") return await diagnostics(req, env);
       return textResponse("Not found", 404);
     } catch (err) {
       // Never log TikTok secret credentials, callback codes, or OAuth tokens.
