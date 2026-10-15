@@ -7,6 +7,7 @@
 const AUTH_URL = "https://www.tiktok.com/v2/auth/authorize/";
 const TOKEN_URL = "https://open.tiktokapis.com/v2/oauth/token/";
 const CREATOR_URL = "https://open.tiktokapis.com/v2/post/publish/creator_info/query/";
+const PROFILE_URL = "https://open.tiktokapis.com/v2/user/info/?fields=open_id,display_name";
 
 function textResponse(body, status = 200, headers = {}) {
   return new Response(body, { status, headers: {
@@ -145,6 +146,19 @@ async function checkCreator(token) {
   return body.data;
 }
 
+async function getBasicProfile(token) {
+  const response = await fetch(PROFILE_URL, {
+    method: "GET",
+    headers: { "Authorization": "Bearer " + token },
+    redirect: "error",
+  });
+  const result = await response.json();
+  if (!response.ok || result.error?.code !== "ok" || !result.data?.user?.open_id) {
+    throw new Error("Cannot retrieve TikTok basic profile (" + (result.error?.code || response.status) + ")");
+  }
+  return result.data.user;
+}
+
 async function connect(req, env) {
   const adminError = checkAdminSettings(env);
   if (adminError) return adminError;
@@ -160,7 +174,8 @@ async function connect(req, env) {
   const params = new URLSearchParams({
     client_key: env.TIKTOK_CLIENT_KEY,
     response_type: "code",
-    scope: "user.info.basic,video.publish",
+    // TikTok Sandbox does not offer Content Posting API. Only test Login Kit.
+    scope: env.TIKTOK_MODE === "sandbox" ? "user.info.basic" : "user.info.basic,video.publish",
     redirect_uri: env.TIKTOK_REDIRECT_URI,
     state,
   });
@@ -193,17 +208,35 @@ async function callback(req, env) {
     redirect_uri: env.TIKTOK_REDIRECT_URI,
   });
   const scopes = new Set((tokens.scope || "").split(","));
-  if (!scopes.has("video.publish")) {
-    return textResponse("TikTok authorization did not include video.publish.", 403);
+  const sandbox = env.TIKTOK_MODE === "sandbox";
+  const requiredScope = sandbox ? "user.info.basic" : "video.publish";
+  if (!scopes.has(requiredScope)) {
+    return textResponse("TikTok authorization did not grant the requested scope.", 403);
   }
-  const details = await checkCreator(tokens.access_token);
-  const actual = (details.creator_username || "").replace(/^@/, "").toLowerCase();
-  const expected = (env.TIKTOK_ACCOUNT || "g0news1").replace(/^@/, "").toLowerCase();
-  if (actual !== expected) {
-    return textResponse("Wrong account. Connect @" + expected + " instead.", 403);
+  let username = null;
+  let displayName = null;
+  let accountVerified = false;
+  if (sandbox) {
+    // Basic scope never proves the user's TikTok @handle. Do not claim
+    // to have validated @g0news1 or activated video publishing.
+    const profile = await getBasicProfile(tokens.access_token);
+    displayName = profile.display_name || null;
+    if (profile.open_id !== tokens.open_id) {
+      return textResponse("TikTok account verification mismatch.", 403);
+    }
+  } else {
+    const details = await checkCreator(tokens.access_token);
+    const actual = (details.creator_username || "").replace(/^@/, "").toLowerCase();
+    const expected = (env.TIKTOK_ACCOUNT || "g0news1").replace(/^@/, "").toLowerCase();
+    if (actual !== expected) {
+      return textResponse("Wrong account. Connect @" + expected + " instead.", 403);
+    }
+    username = actual;
+    accountVerified = true;
   }
   const record = {
-    username: actual,
+    username, display_name: displayName, account_verified: accountVerified,
+    mode: sandbox ? "sandbox" : "production",
     open_id: tokens.open_id,
     scopes: tokens.scope,
     access_token: tokens.access_token,
@@ -212,7 +245,10 @@ async function callback(req, env) {
     refresh_expires_at: Date.now() + (tokens.refresh_expires_in || 0) * 1000,
   };
   await env.AUTH_STORE.put("owner:token", await seal(record, env));
-  return textResponse("TikTok @" + actual + " connected. Return to ChatGPT.", 200, {
+  const message = sandbox
+    ? "TikTok Sandbox Login Kit authorized. This is NOT public publishing access. Return to ChatGPT."
+    : "TikTok @" + username + " connected. Return to ChatGPT.";
+  return textResponse(message, 200, {
     "Set-Cookie": "gns_state=; Path=/callback; HttpOnly; Secure; SameSite=Lax; Max-Age=0",
   });
 }
@@ -226,7 +262,8 @@ async function status(req, env) {
   if (!item) return Response.json({ connected: false }, { headers: { "Cache-Control": "no-store" } });
   const user = await unseal(item, env);
   return Response.json({
-    connected: true, username: user.username,
+    connected: true, username: user.username, display_name: user.display_name || null,
+    account_verified: user.account_verified === true, mode: user.mode || "production",
     scopes: user.scopes, token_expired: Date.now() >= user.expires_at,
     refresh_expired: Date.now() >= user.refresh_expires_at,
   }, { headers: { "Cache-Control": "no-store" } });
@@ -285,6 +322,8 @@ async function diagnostics(req, env) {
     redirect_uri: redirectStatus,
     token_encryption_key: encryptionStatus,
     auth_store: kvStatus,
+    mode: env.TIKTOK_MODE === "sandbox" ? "sandbox" : "production",
+    requested_scopes: env.TIKTOK_MODE === "sandbox" ? "user.info.basic" : "user.info.basic,video.publish",
     ready: missing.length === 0 && redirectStatus === "ok" &&
       encryptionStatus === "ok" && kvStatus === "ok",
   }, { headers: { "Cache-Control": "no-store" } });
