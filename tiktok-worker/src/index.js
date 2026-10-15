@@ -25,6 +25,8 @@ function safeTikTokErrorCode(value) {
     "unauthorized_client", "access_denied", "server_error",
     "temporarily_unavailable", "unsupported_grant_type", "invalid_token",
     "scope_not_authorized", "scope_permission_missed", "rate_limit_exceeded",
+    // Exception *types*, not exception messages (which may contain sensitive data).
+    "TypeError", "AbortError", "TimeoutError",
   ]);
   return typeof value === "string" && allowed.has(value) ? value : "other";
 }
@@ -72,8 +74,9 @@ function oauthResult(req) {
     internal_error: "Unexpected server error",
   };
   const label = labels[step] || "Unknown OAuth stage";
-  const reasonText = step === "token_exchange" || step === "profile_lookup" ?
-    " (TikTok error: " + reason + ")" : "";
+  const reasonText = (step === "token_exchange" || step === "profile_lookup")
+    ? " (TikTok error: " + reason + ")"
+    : step === "token_network" ? " (network error type: " + reason + ")" : "";
   return textResponse("GoNews OAuth could not finish. Failed step: " + label + reasonText +
     ". Do not share any authorization code. Report only this error label to ChatGPT.", 502);
 }
@@ -458,6 +461,20 @@ async function networkTest(req, env) {
         client_secret: "invalid-network-probe",
         grant_type: "invalid-network-probe",
       }),
+      redirect: "manual",
+    },
+    {
+      name: "tiktok_token_post_dummy_redirect_error",
+      url: TOKEN_URL,
+      method: "POST",
+      body: new URLSearchParams({
+        client_key: "invalid-network-probe",
+        client_secret: "invalid-network-probe",
+        grant_type: "authorization_code",
+        code: "invalid-network-probe",
+        redirect_uri: "https://invalid.example/callback",
+      }).toString(),
+      redirect: "error",
     },
   ];
   const responses = await Promise.all(checks.map(async check => {
@@ -466,7 +483,7 @@ async function networkTest(req, env) {
         method: check.method,
         ...(check.body ? { body: check.body } : {}),
         headers: check.body ? { "Content-Type": "application/x-www-form-urlencoded" } : {},
-        redirect: "manual",
+        redirect: check.redirect || "manual",
         signal: AbortSignal.timeout(8000),
       });
       // A 400/401/403/404/405 here proves connectivity; do not read body.
