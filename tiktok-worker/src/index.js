@@ -239,9 +239,12 @@ export default {
       if (url.pathname === "/health" && req.method === "GET") {
         return Response.json({ ok: true, service: "GoNews TikTok OAuth" });
       }
-      if (url.pathname === "/connect" && req.method === "GET") return connect(req, env);
-      if (url.pathname === "/callback" && req.method === "GET") return callback(req, env);
-      if (url.pathname === "/status" && req.method === "GET") return status(req, env);
+      // Await async route handlers *inside* try/catch. Without await, failed
+      // KV writes or misconfigured secrets cause an unhandled rejection and
+      // Cloudflare Error 1101 instead of a controlled 503 response.
+      if (url.pathname === "/connect" && req.method === "GET") return await connect(req, env);
+      if (url.pathname === "/callback" && req.method === "GET") return await callback(req, env);
+      if (url.pathname === "/status" && req.method === "GET") return await status(req, env);
       return textResponse("Not found", 404);
     } catch (err) {
       // Never log TikTok secret credentials, callback codes, or OAuth tokens.
