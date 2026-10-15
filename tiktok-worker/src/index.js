@@ -670,6 +670,42 @@ async function creatorPostingOptions(req, env) {
   }
 }
 
+
+async function sendTikTokJson(url, token, payload) {
+  const response = await fetch(url, {
+    method: "POST", redirect: "error",
+    headers: { Authorization: "Bearer " + token, "Content-Type": "application/json; charset=UTF-8" },
+    body: JSON.stringify(payload),
+  });
+  const json = await response.json();
+  if (!response.ok || json?.error?.code !== "ok") {
+    throw new Error("TikTok API request failed: " + String(json?.error?.code || response.status).slice(0, 60));
+  }
+  return json.data;
+}
+
+async function postingStatus(req, env) {
+  if (!isOwner(req, env)) return requireOwner();
+  try {
+    const publishId = new URL(req.url).searchParams.get("id") || "";
+    if (!/^[a-zA-Z0-9_~.:-]{1,120}$/.test(publishId)) {
+      return Response.json({ error: "Invalid publication identifier." }, { status: 400 });
+    }
+    const token = await getProductionAccess(env);
+    const data = await sendTikTokJson(
+      "https://open.tiktokapis.com/v2/post/publish/status/fetch/",
+      token, { publish_id: publishId },
+    );
+    return Response.json({
+      status: data.status || "UNKNOWN",
+      fail_reason: data.fail_reason || null,
+      publicly_available_post_id: data.publicaly_available_post_id || [],
+    }, { headers: { "Cache-Control": "no-store" } });
+  } catch (error) {
+    return Response.json({ error: error.message }, { status: 403 });
+  }
+}
+
 export default {
   async fetch(req, env) {
     try {
@@ -684,6 +720,7 @@ export default {
       if (url.pathname === "/callback" && req.method === "GET") return await callback(req, env);
       if (url.pathname === "/result" && req.method === "GET") return oauthResult(req);
       if (url.pathname === "/status" && req.method === "GET") return await status(req, env);
+      if (url.pathname === "/posting-status" && req.method === "GET") return await postingStatus(req, env);
       if (url.pathname === "/creator-options" && req.method === "GET") return await creatorPostingOptions(req, env);
       if (url.pathname === "/posting-readiness" && req.method === "GET") {
         if (!isOwner(req, env)) return requireOwner();
