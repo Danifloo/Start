@@ -9,6 +9,73 @@ const TOKEN_URL = "https://open.tiktokapis.com/v2/oauth/token/";
 const CREATOR_URL = "https://open.tiktokapis.com/v2/post/publish/creator_info/query/";
 const PROFILE_URL = "https://open.tiktokapis.com/v2/user/info/?fields=open_id,display_name";
 
+class OAuthStepError extends Error {
+  constructor(step, providerCode = "unknown") {
+    super(step + ":" + providerCode);
+    this.step = step;
+    this.providerCode = providerCode;
+  }
+}
+
+// TikTok error descriptions may contain account-related values, so only
+// allow known public OAuth error codes into browser-visible diagnostics.
+function safeTikTokErrorCode(value) {
+  const allowed = new Set([
+    "invalid_client", "invalid_grant", "invalid_request", "invalid_scope",
+    "unauthorized_client", "access_denied", "server_error",
+    "temporarily_unavailable", "unsupported_grant_type", "invalid_token",
+    "scope_not_authorized", "scope_permission_missed", "rate_limit_exceeded",
+  ]);
+  return typeof value === "string" && allowed.has(value) ? value : "other";
+}
+
+function oauthFinish(req, step, reason = "") {
+  // The callback URL contains a sensitive one-time authorization code.
+  // Always redirect to a clean result URL before showing the outcome.
+  const target = new URL("/result", req.url);
+  target.searchParams.set("step", step);
+  if (reason) target.searchParams.set("reason", reason);
+  return new Response(null, { status: 303, headers: {
+    Location: target.toString(),
+    "Cache-Control": "no-store",
+    "Referrer-Policy": "no-referrer",
+    "Set-Cookie": "gns_state=; Path=/callback; HttpOnly; Secure; SameSite=Lax; Max-Age=0",
+  } });
+}
+
+function oauthResult(req) {
+  const url = new URL(req.url);
+  const step = url.searchParams.get("step") || "unknown";
+  const reason = safeTikTokErrorCode(url.searchParams.get("reason"));
+  if (step === "connected_sandbox") {
+    return textResponse("CONNECTED: TikTok Sandbox Login Kit authorization succeeded. No public publishing rights have been granted.");
+  }
+  if (step === "connected_production") {
+    return textResponse("CONNECTED: TikTok production authorization succeeded.");
+  }
+  const labels = {
+    csrf_state: "OAuth state / session mismatch",
+    expired_state: "OAuth state expired",
+    authorization_denied: "TikTok consent not completed",
+    token_exchange: "TikTok access token exchange",
+    token_network: "Connection to TikTok token API",
+    token_response: "Unexpected token API response",
+    scope: "Permission returned by TikTok",
+    profile_lookup: "TikTok basic profile lookup",
+    profile_network: "Connection to TikTok profile API",
+    profile_response: "Unexpected profile API response",
+    profile_mismatch: "TikTok account verification",
+    kv_state: "Temporary OAuth state storage",
+    secure_storage: "Encrypting or storing authorization",
+    internal_error: "Unexpected server error",
+  };
+  const label = labels[step] || "Unknown OAuth stage";
+  const reasonText = step === "token_exchange" || step === "profile_lookup" ?
+    " (TikTok error: " + reason + ")" : "";
+  return textResponse("GoNews OAuth could not finish. Failed step: " + label + reasonText +
+    ". Do not share any authorization code. Report only this error label to ChatGPT.", 502);
+}
+
 function textResponse(body, status = 200, headers = {}) {
   return new Response(body, { status, headers: {
     "Content-Type": "text/plain; charset=utf-8",
@@ -115,19 +182,26 @@ function validateEnv(env) {
 }
 
 async function getTokens(env, data) {
-  const response = await fetch(TOKEN_URL, {
-    method: "POST",
-    headers: { "Content-Type": "application/x-www-form-urlencoded" },
-    body: new URLSearchParams({
-      client_key: env.TIKTOK_CLIENT_KEY,
-      client_secret: env.TIKTOK_CLIENT_SECRET,
-      ...data,
-    }),
-    redirect: "error",
-  });
-  const body = await response.json();
-  if (!response.ok || !body.access_token) {
-    throw new Error("TikTok denied token exchange (" + (body.error || response.status) + ")");
+  let response;
+  try {
+    response = await fetch(TOKEN_URL, {
+      method: "POST",
+      headers: { "Content-Type": "application/x-www-form-urlencoded" },
+      body: new URLSearchParams({
+        client_key: env.TIKTOK_CLIENT_KEY,
+        client_secret: env.TIKTOK_CLIENT_SECRET,
+        ...data,
+      }),
+      redirect: "error",
+    });
+  } catch {
+    throw new OAuthStepError("token_network");
+  }
+  let body;
+  try { body = await response.json(); }
+  catch { throw new OAuthStepError("token_response"); }
+  if (!response.ok || !body?.access_token) {
+    throw new OAuthStepError("token_exchange", safeTikTokErrorCode(body?.error));
   }
   return body;
 }
@@ -147,14 +221,21 @@ async function checkCreator(token) {
 }
 
 async function getBasicProfile(token) {
-  const response = await fetch(PROFILE_URL, {
-    method: "GET",
-    headers: { "Authorization": "Bearer " + token },
-    redirect: "error",
-  });
-  const result = await response.json();
-  if (!response.ok || result.error?.code !== "ok" || !result.data?.user?.open_id) {
-    throw new Error("Cannot retrieve TikTok basic profile (" + (result.error?.code || response.status) + ")");
+  let response;
+  try {
+    response = await fetch(PROFILE_URL, {
+      method: "GET",
+      headers: { "Authorization": "Bearer " + token },
+      redirect: "error",
+    });
+  } catch {
+    throw new OAuthStepError("profile_network");
+  }
+  let result;
+  try { result = await response.json(); }
+  catch { throw new OAuthStepError("profile_response"); }
+  if (!response.ok || result?.error?.code !== "ok" || !result?.data?.user?.open_id) {
+    throw new OAuthStepError("profile_lookup", safeTikTokErrorCode(result?.error?.code));
   }
   return result.data.user;
 }
@@ -196,12 +277,19 @@ async function callback(req, env) {
   const url = new URL(req.url);
   const state = url.searchParams.get("state") || "";
   const code = url.searchParams.get("code") || "";
-  if (!state || !code || !equal(state, cookie(req, "gns_state"))) {
-    return textResponse("Invalid or missing TikTok authorization. Restart at /connect.", 400);
+  if (!state || !equal(state, cookie(req, "gns_state"))) {
+    return oauthFinish(req, "csrf_state");
   }
-  const recorded = await env.AUTH_STORE.get("oauth:" + state);
-  if (recorded !== "unused") return textResponse("Authorization expired. Restart at /connect.", 400);
-  await env.AUTH_STORE.delete("oauth:" + state);
+  if (url.searchParams.has("error")) return oauthFinish(req, "authorization_denied");
+  if (!code) return oauthFinish(req, "csrf_state");
+  let recorded;
+  try {
+    recorded = await env.AUTH_STORE.get("oauth:" + state);
+    if (recorded === "unused") await env.AUTH_STORE.delete("oauth:" + state);
+  } catch {
+    throw new OAuthStepError("kv_state");
+  }
+  if (recorded !== "unused") return oauthFinish(req, "expired_state");
   const tokens = await getTokens(env, {
     grant_type: "authorization_code",
     code,
@@ -211,7 +299,7 @@ async function callback(req, env) {
   const sandbox = env.TIKTOK_MODE === "sandbox";
   const requiredScope = sandbox ? "user.info.basic" : "video.publish";
   if (!scopes.has(requiredScope)) {
-    return textResponse("TikTok authorization did not grant the requested scope.", 403);
+    return oauthFinish(req, "scope");
   }
   let username = null;
   let displayName = null;
@@ -222,14 +310,14 @@ async function callback(req, env) {
     const profile = await getBasicProfile(tokens.access_token);
     displayName = profile.display_name || null;
     if (profile.open_id !== tokens.open_id) {
-      return textResponse("TikTok account verification mismatch.", 403);
+      return oauthFinish(req, "profile_mismatch");
     }
   } else {
     const details = await checkCreator(tokens.access_token);
     const actual = (details.creator_username || "").replace(/^@/, "").toLowerCase();
     const expected = (env.TIKTOK_ACCOUNT || "g0news1").replace(/^@/, "").toLowerCase();
     if (actual !== expected) {
-      return textResponse("Wrong account. Connect @" + expected + " instead.", 403);
+      return oauthFinish(req, "profile_mismatch");
     }
     username = actual;
     accountVerified = true;
@@ -244,13 +332,12 @@ async function callback(req, env) {
     expires_at: Date.now() + tokens.expires_in * 1000,
     refresh_expires_at: Date.now() + (tokens.refresh_expires_in || 0) * 1000,
   };
-  await env.AUTH_STORE.put("owner:token", await seal(record, env));
-  const message = sandbox
-    ? "TikTok Sandbox Login Kit authorized. This is NOT public publishing access. Return to ChatGPT."
-    : "TikTok @" + username + " connected. Return to ChatGPT.";
-  return textResponse(message, 200, {
-    "Set-Cookie": "gns_state=; Path=/callback; HttpOnly; Secure; SameSite=Lax; Max-Age=0",
-  });
+  try {
+    await env.AUTH_STORE.put("owner:token", await seal(record, env));
+  } catch {
+    throw new OAuthStepError("secure_storage");
+  }
+  return oauthFinish(req, sandbox ? "connected_sandbox" : "connected_production");
 }
 
 async function status(req, env) {
@@ -397,14 +484,21 @@ export default {
       // Cloudflare Error 1101 instead of a controlled 503 response.
       if (url.pathname === "/connect" && req.method === "GET") return await connect(req, env);
       if (url.pathname === "/callback" && req.method === "GET") return await callback(req, env);
+      if (url.pathname === "/result" && req.method === "GET") return oauthResult(req);
       if (url.pathname === "/status" && req.method === "GET") return await status(req, env);
       if (url.pathname === "/diagnostics" && req.method === "GET") return await diagnostics(req, env);
       if (url.pathname === "/verify-client-key" && ["GET", "POST"].includes(req.method)) return await verifyClientKey(req, env);
       return textResponse("Not found", 404);
     } catch (err) {
-      // Never log TikTok secret credentials, callback codes, or OAuth tokens.
-      console.error("GoNews OAuth error:", err instanceof Error ? err.message : "unknown");
-      return textResponse("Service configuration incomplete or TikTok authorization failed.", 503);
+      // Never log TikTok private values, authorization codes or tokens.
+      const url = new URL(req.url);
+      if (url.pathname === "/callback" && req.method === "GET") {
+        return oauthFinish(req,
+          err instanceof OAuthStepError ? err.step : "internal_error",
+          err instanceof OAuthStepError ? err.providerCode : "");
+      }
+      console.error("GoNews request failed in " + url.pathname);
+      return textResponse("Service configuration incomplete or request failed.", 503);
     }
   },
 };
