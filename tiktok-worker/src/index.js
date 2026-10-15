@@ -29,7 +29,11 @@ function isOwner(req, env) {
   const authorization = req.headers.get("Authorization") || "";
   if (!authorization.startsWith("Basic ")) return false;
   try {
-    const decoded = atob(authorization.slice(6));
+    // Basic Auth transports UTF-8 credentials as Base64 bytes. Decoding
+    // with atob alone produces Latin-1 text and rejects accented passwords.
+    const raw = atob(authorization.slice(6).trim());
+    const bytes = Uint8Array.from(raw, ch => ch.charCodeAt(0));
+    const decoded = new TextDecoder("utf-8", { fatal: true }).decode(bytes);
     const colon = decoded.indexOf(":");
     return colon > 0 && equal(decoded.slice(0, colon), env.ADMIN_USERNAME) &&
       equal(decoded.slice(colon + 1), env.ADMIN_PASSWORD);
@@ -40,8 +44,15 @@ function isOwner(req, env) {
 
 function requireOwner() {
   return textResponse("Owner sign-in required", 401, {
-    "WWW-Authenticate": 'Basic realm="GoNews Publisher"',
+    "WWW-Authenticate": 'Basic realm="GoNews Publisher", charset="UTF-8"',
   });
+}
+
+function checkAdminSettings(env) {
+  if (!env.ADMIN_USERNAME || !env.ADMIN_PASSWORD) {
+    return textResponse("Administrator credentials are not configured in Cloudflare Worker secrets.", 503);
+  }
+  return null;
 }
 
 function cookie(req, key) {
@@ -135,6 +146,8 @@ async function checkCreator(token) {
 }
 
 async function connect(req, env) {
+  const adminError = checkAdminSettings(env);
+  if (adminError) return adminError;
   if (!isOwner(req, env)) return requireOwner();
   validateEnv(env);
   const requestUrl = new URL(req.url);
@@ -205,6 +218,8 @@ async function callback(req, env) {
 }
 
 async function status(req, env) {
+  const adminError = checkAdminSettings(env);
+  if (adminError) return adminError;
   if (!isOwner(req, env)) return requireOwner();
   validateEnv(env);
   const item = await env.AUTH_STORE.get("owner:token");
