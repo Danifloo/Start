@@ -330,10 +330,10 @@ async function callback(req, env) {
   if (sandbox) {
     // Basic scope never proves the user's TikTok @handle. Do not claim
     // to have validated @g0news1 or activated video publishing.
-    const profile = await getBasicProfile(tokens.access_token);
-    displayName = profile.display_name || null;
-    if (profile.open_id !== tokens.open_id) {
-      return oauthFinish(req, "profile_mismatch");
+    // Sandbox Login Kit can finish using the open_id in the OAuth token response.
+    // Profile lookup is optional and must not block a successful login.
+    if (typeof tokens.open_id !== "string" || !tokens.open_id) {
+      return oauthFinish(req, "profile_response");
     }
   } else {
     const details = await checkCreator(tokens.access_token);
