@@ -88,6 +88,10 @@ async def ig(method, path, *, params=None, data=None):
         return res
 
 async def publish(item):
+    profile = await ig("GET", "me", params={"fields":"id,username"})
+    expected = os.getenv("IG_EXPECTED_USERNAME", "maqued2").lstrip("@").casefold()
+    if str(profile.get("id")) != str(IG_USER) or str(profile.get("username", "")).casefold() != expected:
+        raise RuntimeError("La cuenta autorizada no coincide con @"+expected+"; publicación bloqueada.")
     quota = await ig("GET", f"{IG_USER}/content_publishing_limit",
                      params={"fields": "quota_usage,config"})
     obj = (quota.get("data") or [quota])[0]
