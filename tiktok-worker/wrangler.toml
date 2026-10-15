@@ -3,7 +3,9 @@ main = "src/index.js"
 compatibility_date = "2026-10-14"
 workers_dev = true
 
-# This file only configures the initial HTTPS deployment.
-# Before using /connect and /callback, create a KV namespace and declare
-# [[kv_namespaces]] binding = "AUTH_STORE" and its real ID in this file.
-# Never commit CLIENT_SECRET, OAuth tokens, passwords or encryption keys.
+# Bind to the existing Cloudflare Workers KV namespace GONEWS_AUTH.
+# This namespace ID is not a secret; sensitive TikTok keys, tokens and
+# encryption passwords must be configured as Cloudflare Worker secrets.
+[[kv_namespaces]]
+binding = "AUTH_STORE"
+id = "c905d4b16d26451aa7eb6200ff5a782a"
