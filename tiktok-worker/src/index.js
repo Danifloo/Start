@@ -760,6 +760,18 @@ async function submitVideo(req, env) {
   }
 }
 
+
+function publishingPanel() {
+  const html = `<!doctype html><html lang="es"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>GoNews · Publicar video</title><style>body{font:16px system-ui;background:#111820;color:#fff;margin:0}main{max-width:600px;margin:25px auto;padding:20px}input,textarea,select{box-sizing:border-box;width:100%;padding:12px;border-radius:8px;font:inherit}label{display:block;margin-top:15px}label input[type=checkbox]{width:auto}button{background:#ffd500;border:0;border-radius:8px;padding:13px;font-weight:bold;margin-top:18px}video{width:100%;max-height:420px}#message{white-space:pre-wrap;line-height:1.5}</style></head><body><main><h1>GoNews · Publicar</h1><p>Solo disponible con autorización de producción de TikTok. El video se envía únicamente cuando confirmas.</p><button id="load">Comprobar permisos</button><p id="message" role="status"></p><form id="form" hidden><label>Video MP4, hasta 30 MB<input id="video" type="file" accept="video/mp4" required></label><video id="preview" controls playsinline hidden></video><label>Descripción<textarea id="title" maxlength="2200" required></textarea></label><label>Privacidad<select id="privacy" required></select></label><label><input id="comment" type="checkbox"> Desactivar comentarios</label><label><input id="duet" type="checkbox"> Desactivar duetos</label><label><input id="stitch" type="checkbox"> Desactivar stitches</label><label><input id="consent" type="checkbox" required> Confirmo que tengo los derechos del video y autorizo publicarlo.</label><button id="send">Enviar a TikTok</button></form><button id="check" hidden>Consultar estado</button></main><script>
+const msg=document.getElementById("message"),form=document.getElementById("form");let creator="",pid="",previewUrl="";
+document.getElementById("load").onclick=async()=>{msg.textContent="Consultando permisos...";try{const r=await fetch("/creator-options");const j=await r.json();if(!r.ok)throw Error(j.error);creator=j.creator_username;const p=document.getElementById("privacy");p.replaceChildren();for(const name of j.privacy_level_options){const o=document.createElement("option");o.value=name;o.textContent=name;p.append(o);}for(const [id,key] of [["comment","comment_disabled"],["duet","duet_disabled"],["stitch","stitch_disabled"]])document.getElementById(id).disabled=!!j[key];form.hidden=false;msg.textContent="Cuenta verificada: @"+creator;}catch(e){msg.textContent=e.message;form.hidden=true;}};
+document.getElementById("video").onchange=e=>{const v=document.getElementById("preview"),file=e.target.files[0];if(previewUrl)URL.revokeObjectURL(previewUrl);v.hidden=!file;if(file){previewUrl=URL.createObjectURL(file);v.src=previewUrl;}};
+form.onsubmit=async e=>{e.preventDefault();const file=document.getElementById("video").files[0];if(!file||file.size>30*1024*1024){msg.textContent="MP4 máximo 30 MB.";return;}if(!confirm("¿Publicar en @"+creator+"?"))return;const btn=document.getElementById("send");btn.disabled=true;msg.textContent="Enviando a TikTok...";try{const data=new FormData();data.set("video",file);data.set("title",document.getElementById("title").value);data.set("privacy_level",document.getElementById("privacy").value);data.set("consent","yes");for(const [key,id] of [["disable_comment","comment"],["disable_duet","duet"],["disable_stitch","stitch"]])data.set(key,String(document.getElementById(id).checked));const r=await fetch("/submit-video",{method:"POST",body:data});const j=await r.json();if(!r.ok)throw Error(j.error);pid=j.publish_id;msg.textContent="TikTok recibió el video. La publicación todavía no está confirmada.";document.getElementById("check").hidden=false;}catch(e){msg.textContent=e.message;}finally{btn.disabled=false;}};
+document.getElementById("check").onclick=async()=>{try{const r=await fetch("/posting-status?id="+encodeURIComponent(pid));const j=await r.json();if(!r.ok)throw Error(j.error);msg.textContent="Estado: "+j.status+(j.fail_reason?" — "+j.fail_reason:"");}catch(e){msg.textContent=e.message;}};
+</script></body></html>`;
+  return new Response(html,{headers:{"Content-Type":"text/html; charset=utf-8","Cache-Control":"no-store","X-Frame-Options":"DENY","Content-Security-Policy":"default-src 'self' blob:; script-src 'unsafe-inline'; style-src 'unsafe-inline'; media-src blob:; form-action 'self'; frame-ancestors 'none'"}});
+}
+
 export default {
   async fetch(req, env) {
     try {
@@ -774,6 +786,7 @@ export default {
       if (url.pathname === "/callback" && req.method === "GET") return await callback(req, env);
       if (url.pathname === "/result" && req.method === "GET") return oauthResult(req);
       if (url.pathname === "/status" && req.method === "GET") return await status(req, env);
+      if (url.pathname === "/publish" && req.method === "GET") { if (!isOwner(req, env)) return requireOwner(); return publishingPanel(); }
       if (url.pathname === "/submit-video" && req.method === "POST") return await submitVideo(req, env);
       if (url.pathname === "/posting-status" && req.method === "GET") return await postingStatus(req, env);
       if (url.pathname === "/creator-options" && req.method === "GET") return await creatorPostingOptions(req, env);
