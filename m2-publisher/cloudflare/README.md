@@ -59,3 +59,17 @@ npx wrangler dev --test-scheduled
 ```
 
 **Seguridad:** variables reales exclusivamente en **Workers Secrets**. No publicar `.dev.vars`, `.env`, `IG_ACCESS_TOKEN`, `SESSION_SECRET` ni contraseñas en repositorios, comentarios o capturas. El repositorio `Danifloo/Start` es público: la app usa autenticación privada, pero el código es visible a terceros.
+
+## Instalación desde Android, sin terminal (Cloudflare + GitHub)
+
+Si solo tienes tu teléfono, también puedes hacer la instalación desde los paneles web oficiales:
+
+1. Abre [Cloudflare](https://dash.cloudflare.com/sign-up) e inicia sesión con tu cuenta Free. **Este paso lo hace el titular**: el asistente no puede registrarte usando credenciales personales.
+2. En el panel de Cloudflare, busca **Storage & databases → D1**, crea una base `m2-publisher-db` y copia su identificador. En la vista de consola SQL de D1, ejecuta el contenido de [`migrations/0001_initial.sql`](migrations/0001_initial.sql). Confirma que aparecen las tablas `posts`, `app_events`, `app_meta` y `login_limits`.
+3. En GitHub, abre la rama `feature/m2-publisher`, edita `m2-publisher/cloudflare/wrangler.jsonc` y sustituye `REPLACE_WITH_CLOUDFLARE_D1_DATABASE_ID` por ese identificador. Guarda **solo ese ID público del recurso**, nunca contraseñas ni tokens.
+4. En Cloudflare, abre **Workers & Pages → Create application → GitHub**, autoriza tu GitHub y selecciona **Danifloo/Start**. Configura la rama `feature/m2-publisher`, nombre Worker `m2-publisher-free` y **Root directory** `m2-publisher/cloudflare`. El despliegue lee el `wrangler.jsonc` de ese directorio. <https://developers.cloudflare.com/workers/ci-cd/builds/configuration/>
+5. Cuando Cloudflare cree el Worker, ve a **Settings → Variables and Secrets**, añade como **Secret** `ADMIN_PASSWORD` y `SESSION_SECRET` y usa los valores privados indicados arriba. Mantén `ENABLE_PUBLISHING=false`. Si la pantalla de despliegue requiere un paso de facturación, no aceptes sin evaluar el costo.
+6. Abre el enlace HTTPS `workers.dev` proporcionado **por tu propio Cloudflare**. Entra con tu contraseña de panel, verifica el indicador `MODO SEGURO · SIN PUBLICAR` y comprueba que el Cron de cada quince minutos aparece en la configuración. Esto **no significa** que Instagram esté conectado ni que se haya publicado contenido.
+7. La conexión a Meta y la prueba con **una publicación real** deben hacerse después, una vez autorizada la cuenta. No envíes contraseñas ni tokens por ChatGPT.
+
+La ubicación exacta de las opciones del panel puede variar por actualizaciones de Cloudflare. Estas instrucciones son equivalentes a los comandos de terminal anteriores, no son un despliegue completado.
