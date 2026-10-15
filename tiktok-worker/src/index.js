@@ -649,6 +649,11 @@ export default {
       if (url.pathname === "/callback" && req.method === "GET") return await callback(req, env);
       if (url.pathname === "/result" && req.method === "GET") return oauthResult(req);
       if (url.pathname === "/status" && req.method === "GET") return await status(req, env);
+      if (url.pathname === "/posting-readiness" && req.method === "GET") {
+        if (!isOwner(req, env)) return requireOwner();
+        const sandbox = env.TIKTOK_MODE === "sandbox";
+        return Response.json({ mode: sandbox ? "sandbox" : "production", publishing_enabled: false, reason: sandbox ? "TikTok Sandbox supports login testing, not public posting." : "Production posting is not implemented yet.", next_step: "Implement and test Content Posting API before requesting review." }, { headers: { "Cache-Control": "no-store" } });
+      }
       if (url.pathname === "/diagnostics" && req.method === "GET") return await diagnostics(req, env);
       if (url.pathname === "/network-test" && req.method === "GET") return await networkTest(req, env);
       if (url.pathname === "/verify-client-key" && ["GET", "POST"].includes(req.method)) return await verifyClientKey(req, env);
