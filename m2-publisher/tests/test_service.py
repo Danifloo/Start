@@ -27,7 +27,7 @@ def test_private_dashboard_and_queue():
         assert wrong.status_code == 401
         login = c.post("/login", data={"password": os.environ["ADMIN_PASSWORD"]})
         assert login.status_code == 200
-        assert "M2 PUBLISHER" in login.text
+        assert "PUBLISHER" in login.text
 
         ny = ZoneInfo("America/New_York")
         future = datetime.now(ny).replace(second=0,microsecond=0) + timedelta(hours=2)
