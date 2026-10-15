@@ -1,0 +1,9 @@
+name = "gonews-tiktok-auth"
+main = "src/index.js"
+compatibility_date = "2026-10-14"
+workers_dev = true
+
+# This file only configures the initial HTTPS deployment.
+# Before using /connect and /callback, create a KV namespace and declare
+# [[kv_namespaces]] binding = "AUTH_STORE" and its real ID in this file.
+# Never commit CLIENT_SECRET, OAuth tokens, passwords or encryption keys.
