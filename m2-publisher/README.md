@@ -1,33 +1,52 @@
-# M2 Publisher — private Instagram news scheduler
+# M2 Publisher — panel privado de Instagram
 
-**Status:** the app source is ready for deployment. It is not deployed or connected to Instagram yet. Do not claim a post is published until Meta returns its public permalink.
+**Estado:** Código de una **primera versión ejecutable en GitHub**, listo para desplegar desde la rama `feature/m2-publisher`. No está alojado ni conectado a Instagram todavía.
 
-This is the private M2 NEWS administration app for **@maqued2**. It supports a password-protected mobile dashboard, verified media uploads, a persistent queue, quarter-hour publishing slots (America/New_York), native Instagram Login OAuth, real publication status/permalink checks and a live Meta publishing-quota check. It does **not** bypass Instagram/Meta limits or automatically generate verified news/designs without an additional editorial integration.
+## Qué hace esta versión
+- Panel web protegido con contraseña, adaptable a Android y ordenador.
+- Agenda de posts de **@maqued2** en los minutos 00, 15, 30 y 45 de Nueva York.
+- Cola persistente SQLite para carruseles con 2–10 imágenes públicas HTTPS.
+- Evita duplicar titulares y horarios.
+- Usa la API oficial de Instagram para crear y publicar carruseles.
+- Consulta la cuota real mediante `content_publishing_limit`.
+- Solo marca publicado tras recibir un enlace directo de Instagram.
+- Si falla o no se conoce el resultado de un envío, conserva `UNCERTAIN` para evitar publicar duplicados.
 
-## Source code and deployment
+## Alcance actual
+Esta versión **no descubre noticias ni edita diseños automáticamente en Canva**. Se añade un post con el enlace a su fuente, licencia de sus imágenes, descripción e imágenes HTTPS exportadas de Canva. Para automatizar investigación/diseño habrá que integrar un servicio editorial separado. No introduce ni publica contenido de relleno. Tampoco puede saltar el límite de publicación de Meta.
 
-The full source is stored as `M2_Publisher_GitHub.tar.xz` next to this README. The `Dockerfile` in this directory extracts the source during a container build. On a computer, you can also run `tar -xJf M2_Publisher_GitHub.tar.xz` to inspect all application files. **Never commit `.env`, API keys, admin passwords or Meta access tokens.**
+La versión ampliada, anteriormente preparada como ZIP en el chat, incluye más interfaz y funciones; este directorio contiene un despliegue GitHub simplificado que puede funcionar sin ese ZIP.
 
-For Railway, import **Danifloo/Start** and set **Root Directory** to `m2-publisher`; Railway will use this directory's Dockerfile. Configure a persistent volume mounted at `/data` (and set `DATA_DIR=/data`) before connecting Instagram. Choose 1 replica/worker only.
+## Despliegue en Railway (o servicio Docker similar)
+1. Importa tu repositorio `Danifloo/Start` y selecciona rama `feature/m2-publisher`, directorio raíz `m2-publisher`.
+2. Crea un **volumen persistente** en `/data` y fija `DATA_DIR=/data`.
+3. Configura las variables privadas del servidor:
 
-Required private environment variables:
+```text
+ADMIN_PASSWORD=(clave única de 16 caracteres o más)
+SESSION_SECRET=(cadena aleatoria secreta de 32 caracteres o más)
+DATA_DIR=/data
+PUBLIC_BASE_URL=https://tu-sitio.railway.app
+IG_USER_ID=(identificador de tu cuenta profesional Instagram)
+IG_ACCESS_TOKEN=(token oficial con permisos de publicación)
+META_GRAPH_VERSION=v25.0
+```
 
-- `ADMIN_PASSWORD`: strong unique password (16+ characters)
-- `SESSION_SECRET`: random secret (32+ characters)
-- `PUBLIC_BASE_URL`: the final HTTPS address of your deployed app
-- `META_APP_ID`, `META_APP_SECRET`: values from your own Meta developer app
-- `DATA_DIR=/data`, `ENABLE_SCHEDULER=1`, `META_GRAPH_VERSION=v25.0`
-- Recommended: `ENCRYPTION_KEY` (persistent Fernet key), stored only in the hosting service secrets
+4. Mantén **una sola réplica y un solo proceso** para impedir trabajos dobles.
+5. Configura el acceso oficial a Instagram mediante Meta Developer; obtén el identificador y token por un flujo legítimo de Meta, colócalos solo como secretos del alojamiento. **La interfaz todavía no ofrece el botón de OAuth**; esa integración queda pendiente.
+6. Abre la URL HTTPS que entregue el alojamiento, entra con `ADMIN_PASSWORD`, crea un carrusel de prueba con imágenes autorizadas y comprueba su enlace real de Instagram.
 
-After deployment, register the exact HTTPS OAuth redirect `https://<your-domain>/auth/instagram/callback` in Meta's Instagram Login setup. Connect the Instagram professional account through the app UI and confirm available permissions and quota. Publish a single test post, verify its permalink, then enable the full editorial workflow only when publishing is confirmed. Check the official Meta documentation and app-review requirements for external users.
+## Seguridad
+- El repositorio **Danifloo/Start es público**. No subas archivos `.env`, tokens, contraseñas, datos de seguidores ni publicaciones privadas.
+- Nunca pongas credenciales de Meta en el navegador ni en el código GitHub. Usa variables privadas del servidor.
+- El programa no afirma que se publicó nada si Meta no devuelve el `permalink`.
+- Para un despliegue 24/7, utiliza un servidor siempre activo, HTTPS y volumen persistente. El alojamiento podría tener costos.
+- GitHub almacena el código; **GitHub por sí solo no mantiene ejecutándose una aplicación web con programador permanente**.
 
-## Safety / limitations
+## Comprobación
+```bash
+pip install -r requirements.txt
+ADMIN_PASSWORD='clave-larga-de-prueba' SESSION_SECRET='clave-de-sesion-larga-de-32-o-mas-caracteres' python -m uvicorn service:app
+```
 
-- Personal Facebook/Instagram credentials are never collected or stored in GitHub.
-- Public repository: application **code is public**; deployment and tokens must stay private.
-- Meta API publication quotas still apply; a 96-post/day target might exceed the applicable Meta quota.
-- Works only with valid photo assets/licensing and approved Meta access.
-- Tests bundled in source (`python -m pytest -q` after installing `pytest` and dependencies); previously verified: **5 passed**.
-- The app uses **Canva designs via exported images**, not automatic Canva API rendering; the AI content-generation pipeline remains to be integrated separately.
-
-**Next:** deploy, configure Meta OAuth, authorize @maqued2, and test one real publication.
+La aplicación está diseñada para trabajar con la cuenta **@maqued2** una vez configurada. Ningún post se publica por el hecho de subir este código a GitHub.
