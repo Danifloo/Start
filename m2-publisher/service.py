@@ -30,7 +30,6 @@ IG_USER = os.getenv("IG_USER_ID", "")
 IG_TOKEN = os.getenv("IG_ACCESS_TOKEN", "")
 IG_VERSION = os.getenv("META_GRAPH_VERSION", "v25.0")
 BASE = "https://graph.instagram.com/" + IG_VERSION
-CANVA_TEMPLATE = "https://www.canva.com/d/QQTBlqObP3r0gt6"
 if len(LOGIN) < 16 or len(SECRET) < 32:
     raise RuntimeError("Set ADMIN_PASSWORD (>=16 chars) and SESSION_SECRET (>=32 chars) before startup.")
 
@@ -189,7 +188,7 @@ input,textarea{background:#121722;color:#fff}button{background:#f3aa44;color:#18
 a{color:#f3aa44}li{margin:12px 0}small,.muted{color:#afb6c5}</style>
 <header><b>M2 <span class='accent'>PUBLISHER</span></b><span>@maqued2 · Nueva York</span></header>
 <main><h1>Centro de publicaciones</h1><p class='muted'>Cuenta profesional de Instagram · Programación cada 15 minutos</p>
-<div class='card'><h2>Estado</h2><p id='stats'>Cargando…</p><a href='https://www.canva.com/d/QQTBlqObP3r0gt6' target='_blank'>Abrir plantilla Canva →</a></div>
+<div class='card'><h2>Estado</h2><p id='stats'>Cargando…</p><a href='https://www.canva.com/' target='_blank'>Abrir plantilla Canva →</a></div>
 <div class='card'><h2>Programar un carrusel</h2><small>Necesitas dos o más imágenes alojadas en HTTPS, de uso autorizado.</small>
 <form id='form'><input name='title' placeholder='Título de noticia' required>
 <textarea name='caption' placeholder='Descripción, créditos y hashtags' required></textarea>
