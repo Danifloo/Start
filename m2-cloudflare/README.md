@@ -55,3 +55,26 @@ GitHub Actions ejecuta esas pruebas sin credenciales; la publicación real debe 
 ## Derechos
 
 Únicamente fotografías reales y autorizadas con créditos. El contenido publicado debe corresponder a hechos comprobados con fuentes confiables. Esta app no elude los límites de Meta ni publica contenido dentro de ChatGPT.
+
+
+## Instalación sin computadora desde Android (GitHub Actions)
+
+Ya existe un botón manual de instalación en la rama principal:
+https://github.com/Danifloo/Start/actions/workflows/m2-cloudflare-deploy.yml
+
+**No pulses Run workflow antes de crear y autorizar tu cuenta Cloudflare Free.** El flujo no puede abrir cuentas ni conceder permisos por ti. Cuando estén listos los secretos:
+
+1. En https://dash.cloudflare.com/sign-up crea tu cuenta Cloudflare Free y confirma tu correo.
+2. En el panel de Cloudflare localiza el ID de tu cuenta y crea un API token personalizado restringido a esa cuenta, con permisos para desplegar Workers y crear/editar D1. No pegues el token en mensajes ni en archivos públicos.
+3. En GitHub abre Danifloo/Start → Settings → Secrets and variables → Actions → New repository secret. Crea CUATRO secretos cifrados:
+   - CLOUDFLARE_ACCOUNT_ID: el ID real de tu cuenta Cloudflare.
+   - CLOUDFLARE_API_TOKEN: tu token limitado de Cloudflare.
+   - M2_ADMIN_PASSWORD: una contraseña nueva de 16 caracteres o más.
+   - M2_SESSION_SECRET: una cadena aleatoria nueva de 32 caracteres o más.
+4. Abre el enlace del workflow de arriba → Run workflow → rama main → confirma la ejecución.
+5. GitHub comprobará el código, creará/reutilizará D1, inicializará la base, desplegará el Worker y configurará los dos secretos privados del administrador. **PUBLISHING_ENABLED seguirá en false; no habrá publicaciones de Instagram.**
+6. Desde Cloudflare Workers mira la dirección pública workers.dev de M2 Publisher. Entra desde el teléfono usando M2_ADMIN_PASSWORD. El panel ya estará conectado a D1.
+
+Para publicar, posteriormente tendrás que autorizar la cuenta profesional @maqued2 en Meta y configurar el ID y token como secretos en Cloudflare; después se verificará una publicación de prueba y se habilitará el interruptor de publicación. **No compartas ni subas el token de Meta a GitHub.** Este sistema no genera por sí mismo noticias ni diseños de Canva todavía.
+
+El workflow de instalación está en main para ser visible en GitHub Actions, pero extrae exclusivamente el código de la rama feature/m2-publisher. Se lanza solo manualmente, sin gastos ni operaciones programadas desde GitHub antes de que tú lo ejecutes. La disponibilidad del nivel gratuito depende de mantenerte dentro de las cuotas de Cloudflare y de Meta.
