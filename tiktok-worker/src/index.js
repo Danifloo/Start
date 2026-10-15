@@ -564,6 +564,77 @@ strong{display:block;margin-top:20px;color:${matched ? "#73e5a0" : "#ffe29a"}}sm
   } });
 }
 
+/**
+ * Owner-only comparison for Sandbox Client Secret. Input is accepted over
+ * HTTPS only, compared in memory and discarded. Never log or echo it.
+ */
+async function verifyClientSecret(req, env) {
+  const adminError = checkAdminSettings(env);
+  if (adminError) return adminError;
+  if (!isOwner(req, env)) return requireOwner();
+  if (!env.TIKTOK_CLIENT_SECRET) {
+    return textResponse("TIKTOK_CLIENT_SECRET is missing from Cloudflare Secrets.", 503);
+  }
+  if (new URL(req.url).protocol !== "https:") {
+    return textResponse("HTTPS is required.", 403);
+  }
+
+  let outcome = "";
+  let matched = false;
+  if (req.method === "POST") {
+    // Reject large payloads, files and non-form requests. No remote TikTok
+    // calls are made by this endpoint.
+    const size = req.headers.get("Content-Length");
+    if (size && (!/^\\d+$/.test(size) || Number(size) > 2048)) {
+      return textResponse("Form is too large.", 413);
+    }
+    if (!(req.headers.get("Content-Type") || "").toLowerCase()
+      .startsWith("application/x-www-form-urlencoded")) {
+      return textResponse("Expected a form submission.", 415);
+    }
+    const input = await req.text();
+    if (input.length > 2048) return textResponse("Form is too large.", 413);
+    const params = new URLSearchParams(input);
+    const submitted = params.get("client_secret");
+    if (!submitted || submitted.length > 512) {
+      outcome = "Please paste the complete Sandbox Client Secret.";
+    } else if (equal(submitted, env.TIKTOK_CLIENT_SECRET)) {
+      matched = true;
+      outcome = "MATCH: Sandbox Client Secret is identical to the one in Cloudflare.";
+    } else if (equal(submitted.trim(), env.TIKTOK_CLIENT_SECRET.trim())) {
+      outcome = "WHITESPACE ERROR: One value contains extra spaces or line breaks. Replace Cloudflare's TIKTOK_CLIENT_SECRET with the exact Sandbox value.";
+    } else {
+      outcome = "DOES NOT MATCH: Cloudflare contains a different Client Secret. Update TIKTOK_CLIENT_SECRET in Cloudflare with the Sandbox Client Secret.";
+    }
+  }
+
+  const style = "body{max-width:640px;margin:36px auto;padding:0 20px;font:17px system-ui,sans-serif;line-height:1.55;background:#10141b;color:#fff}"
+    + "main{border:1px solid #4b5360;border-radius:14px;padding:24px}"
+    + "input{box-sizing:border-box;width:100%;padding:13px;margin-top:10px;font-size:16px;border-radius:8px}"
+    + "button{padding:12px 20px;background:#ffd500;border:0;border-radius:8px;font-size:16px;font-weight:bold;margin-top:18px}"
+    + ".result{font-weight:bold;margin-top:18px;color:" + (matched ? "#8ae6ab" : "#ffdd85") + "}";
+  const html = `<!doctype html><html lang="es"><head><meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>GoNews — Verificar Client Secret</title><style>${style}</style></head>
+<body><main><h1>GoNews Publisher</h1><h2>Verificar Client Secret de Sandbox</h2>
+<p>Esta página compara el valor enviado directamente con el secreto guardado en tu Worker de Cloudflare. No muestra ni guarda los secretos, ni los envía a ChatGPT o a TikTok.</p>
+<form method="post" action="/verify-client-secret">
+<label for="secret">Pega el <strong>Client Secret</strong> de <strong>GoNews Test → Sandbox → Credentials</strong>:</label>
+<input id="secret" type="password" name="client_secret" autocomplete="off" autocapitalize="none" spellcheck="false" required maxlength="512">
+<button type="submit">Comparar secretos</button></form>
+<p class="result" role="status">${outcome}</p>
+<p>Si aparece DOES NOT MATCH o WHITESPACE ERROR, actualiza la variable <code>TIKTOK_CLIENT_SECRET</code> en Cloudflare (tipo Secret). No compartas este valor por chat ni en capturas.</p>
+</main></body></html>`;
+  return new Response(html, { headers: {
+    "Content-Type": "text/html; charset=utf-8",
+    "Cache-Control": "no-store",
+    "X-Content-Type-Options": "nosniff",
+    "X-Frame-Options": "DENY",
+    "Referrer-Policy": "no-referrer",
+    "Content-Security-Policy": "default-src 'none'; style-src 'unsafe-inline'; form-action 'self'; base-uri 'none'; frame-ancestors 'none'",
+  } });
+}
+
 export default {
   async fetch(req, env) {
     try {
@@ -581,6 +652,7 @@ export default {
       if (url.pathname === "/diagnostics" && req.method === "GET") return await diagnostics(req, env);
       if (url.pathname === "/network-test" && req.method === "GET") return await networkTest(req, env);
       if (url.pathname === "/verify-client-key" && ["GET", "POST"].includes(req.method)) return await verifyClientKey(req, env);
+      if (url.pathname === "/verify-client-secret" && ["GET", "POST"].includes(req.method)) return await verifyClientSecret(req, env);
       return textResponse("Not found", 404);
     } catch (err) {
       // Never log TikTok private values, authorization codes or tokens.
