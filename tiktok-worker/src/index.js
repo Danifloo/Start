@@ -59,6 +59,8 @@ function oauthResult(req) {
     authorization_denied: "TikTok consent not completed",
     token_exchange: "TikTok access token exchange",
     token_network: "Connection to TikTok token API",
+    token_form: "Constructing TikTok OAuth form",
+    token_redirect: "Unexpected redirect from TikTok token API",
     token_response: "Unexpected token API response",
     scope: "Permission returned by TikTok",
     profile_lookup: "TikTok basic profile lookup",
@@ -182,20 +184,38 @@ function validateEnv(env) {
 }
 
 async function getTokens(env, data) {
+  // Encode the form before fetch. This isolates payload construction from
+  // outbound network errors and avoids consuming authorization codes in probes.
+  let bodyForm;
+  try {
+    bodyForm = new URLSearchParams({
+      client_key: env.TIKTOK_CLIENT_KEY,
+      client_secret: env.TIKTOK_CLIENT_SECRET,
+      ...data,
+    });
+  } catch {
+    throw new OAuthStepError("token_form");
+  }
   let response;
   try {
     response = await fetch(TOKEN_URL, {
       method: "POST",
-      headers: { "Content-Type": "application/x-www-form-urlencoded" },
-      body: new URLSearchParams({
-        client_key: env.TIKTOK_CLIENT_KEY,
-        client_secret: env.TIKTOK_CLIENT_SECRET,
-        ...data,
-      }),
-      redirect: "error",
+      headers: {
+        "Content-Type": "application/x-www-form-urlencoded",
+        "Cache-Control": "no-cache",
+      },
+      body: bodyForm.toString(),
+      // Explicit manual mode: NEVER send secrets to redirected hosts.
+      // TikTok should return a direct 200/4xx JSON response.
+      redirect: "manual",
     });
-  } catch {
-    throw new OAuthStepError("token_network");
+  } catch (error) {
+    const type = error instanceof Error ? error.name : "unknown";
+    const known = ["TypeError", "AbortError", "TimeoutError"].includes(type);
+    throw new OAuthStepError("token_network", known ? type : "other");
+  }
+  if (response.status >= 300 && response.status < 400) {
+    throw new OAuthStepError("token_redirect");
   }
   let body;
   try { body = await response.json(); }
