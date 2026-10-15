@@ -329,6 +329,62 @@ async function diagnostics(req, env) {
   }, { headers: { "Cache-Control": "no-store" } });
 }
 
+/**
+ * Owner-only comparison of the public TikTok client key with the value
+ * deployed in Cloudflare. Never display, store, or log either value.
+ */
+async function verifyClientKey(req, env) {
+  const adminError = checkAdminSettings(env);
+  if (adminError) return adminError;
+  if (!isOwner(req, env)) return requireOwner();
+  if (!env.TIKTOK_CLIENT_KEY) return textResponse("TIKTOK_CLIENT_KEY is not configured.", 503);
+  let message = "Copy the Sandbox Client key directly from TikTok Developers and paste it below.";
+  let matched = false;
+  if (req.method === "POST") {
+    if (Number(req.headers.get("Content-Length") || 0) > 2048) {
+      return textResponse("Form is too large.", 413);
+    }
+    const form = await req.formData();
+    const provided = form.get("client_key");
+    if (typeof provided !== "string" || provided.length < 4 || provided.length > 128) {
+      message = "Invalid client key input. Copy the complete key from TikTok.";
+    } else if (equal(provided, env.TIKTOK_CLIENT_KEY)) {
+      matched = true;
+      message = "MATCH: The key in TikTok Developers is identical to the key saved in Cloudflare.";
+    } else if (equal(provided.trim(), env.TIKTOK_CLIENT_KEY.trim())) {
+      message = "WHITESPACE ERROR: One of the keys contains extra spaces or line breaks. Copy it again without whitespace.";
+    } else {
+      message = "DOES NOT MATCH: The key saved in Cloudflare differs from the one shown in TikTok Developers.";
+    }
+  }
+  const mode = env.TIKTOK_MODE === "sandbox" ? "Sandbox login-only" : "Production";
+  const html = `<!doctype html><html lang="en"><head><meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>GoNews · Verify Client Key</title>
+<style>body{max-width:680px;margin:40px auto;padding:0 22px;font:17px system-ui,sans-serif;line-height:1.5;background:#10141b;color:white}
+main{border:1px solid #465466;padding:24px;border-radius:14px}label{display:block;margin-top:24px}
+input{box-sizing:border-box;width:100%;font:17px system-ui;padding:12px;background:#fff;color:#111;border:2px solid #67788c;border-radius:8px}
+button{display:block;padding:12px 19px;margin-top:20px;background:#ffd500;color:#111;font-size:17px;font-weight:700;border:0;border-radius:8px}
+strong{display:block;margin-top:20px;color:${matched ? "#73e5a0" : "#ffe29a"}}small{color:#b9c7d7}</style>
+</head><body><main><h1>GoNews Publisher</h1><h2>Check TikTok Client Key</h2>
+<p>Current mode: <b>${mode}</b>. This page checks the key locally with your Cloudflare Worker. It does not display the saved key or send it to ChatGPT.</p>
+<form method="POST" action="/verify-client-key">
+<label for="key">Paste the Client key from <b>GoNews Test → Sandbox → Credentials</b>:</label>
+<input id="key" name="client_key" type="password" required minlength="4" maxlength="128" autocomplete="off" autocapitalize="none" spellcheck="false">
+<button type="submit">Compare keys</button></form>
+<strong role="status">${message}</strong>
+<small>If MATCH appears and TikTok still reports client_key, check that Sandbox changes are applied and the target TikTok account is registered.</small>
+</main></body></html>`;
+  return new Response(html, { headers: {
+    "Content-Type": "text/html; charset=utf-8",
+    "Cache-Control": "no-store",
+    "X-Content-Type-Options": "nosniff",
+    "X-Frame-Options": "DENY",
+    "Referrer-Policy": "no-referrer",
+    "Content-Security-Policy": "default-src 'none'; style-src 'unsafe-inline'; form-action 'self'; base-uri 'none'; frame-ancestors 'none'",
+  } });
+}
+
 export default {
   async fetch(req, env) {
     try {
@@ -343,6 +399,7 @@ export default {
       if (url.pathname === "/callback" && req.method === "GET") return await callback(req, env);
       if (url.pathname === "/status" && req.method === "GET") return await status(req, env);
       if (url.pathname === "/diagnostics" && req.method === "GET") return await diagnostics(req, env);
+      if (url.pathname === "/verify-client-key" && ["GET", "POST"].includes(req.method)) return await verifyClientKey(req, env);
       return textResponse("Not found", 404);
     } catch (err) {
       // Never log TikTok secret credentials, callback codes, or OAuth tokens.
